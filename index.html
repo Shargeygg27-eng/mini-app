@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&family=Pacifico&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #ff1453; --primary-light: #ff7eb3; --gold: #ffd700; --bg: #0d1b2a; --neon: 0 0 15px rgba(255, 20, 83, 0.8); }
+        body { margin: 0; padding: 0; overflow: hidden; background-color: var(--bg); font-family: 'Montserrat', sans-serif; color: white; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: none; }
+        
+        .screen { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; overflow: hidden; z-index: 10; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.4s ease, visibility 0.4s; }
+        .screen.active { opacity: 1; visibility: visible; pointer-events: auto; }
+        
+        .screen.flex-center { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .screen.flex-top { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; overflow-y: auto; padding: 20px 10px; box-sizing: border-box; }
+
+        .ui-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 200; opacity: 0; visibility: hidden; pointer-events: none; transition: 0.3s; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; box-sizing: border-box; padding: 20px; }
+        .ui-overlay.show { opacity: 1; visibility: visible; pointer-events: auto; }
+
+        /* --- ГЛАВНОЕ МЕНЮ --- */
+        #menu-screen { background: url('background.png') center/cover no-repeat; }
+        #menu-screen::before { content: ''; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(10, 20, 35, 0.75); z-index: 1; }
+        #menu-zhanna { position: absolute; right: -40vw; bottom: 0; width: 140vw; max-width: 800px; height: 95vh; background: url('zhanna_fixed.png') no-repeat bottom right; background-size: contain; z-index: 5; pointer-events: none; filter: drop-shadow(10px 10px 30px rgba(0,0,0,0.9)); animation: floatMenu 6s infinite ease-in-out; }
+        
+        #menu-ui { position: absolute; left: 5%; top: 40%; transform: translateY(-50%); width: 50vw; display: flex; flex-direction: column; gap: 15px; z-index: 10; align-items: flex-start; }
+        .menu-title { font-family: 'Pacifico', cursive; font-size: 50px; color: #fff; text-shadow: var(--neon), 0 0 30px var(--primary-light); text-align: left; margin: 0; line-height: 1.1; }
+        
+        .btn-glass { position: relative; overflow: hidden; width: 100%; max-width: 200px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 15px 10px; border-radius: 20px; font-size: 16px; font-weight: 900; backdrop-filter: blur(10px); box-shadow: 0 10px 20px rgba(0,0,0,0.3); text-transform: uppercase; cursor: pointer; transition: 0.2s; text-align: center; }
+        .btn-glass::after { content: ''; position: absolute; top: 0; left: -100%; width: 50%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); transform: skewX(-20deg); animation: sweep 4s infinite; pointer-events: none; }
+        .btn-glass:active { transform: scale(0.95); background: rgba(255, 20, 83, 0.5); border-color: var(--primary); }
+        
+        .menu-special-text { position: absolute; bottom: 30px; width: 100%; font-family: 'Pacifico', cursive; font-size: 26px; color: var(--gold); text-shadow: 2px 2px 5px black, 0 0 20px rgba(255,215,0,0.5); text-align: center; z-index: 10; pointer-events: none; }
+        .menu-footer { position: absolute; bottom: 5px; right: 10px; font-size: 10px; color: rgba(255,255,255,0.3); z-index: 10; }
+
+        /* --- УРОВНИ И ДНЕВНИК --- */
+        .screen-title { font-family: 'Pacifico', cursive; font-size: 40px; color: var(--gold); margin: 0 0 20px 0; text-shadow: 0 0 15px var(--gold); flex-shrink: 0; }
+        #levels-grid, #diary-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; width: 100%; max-width: 400px; margin-bottom: 30px; }
+        .lvl-btn { width: 20%; min-width: 65px; height: 75px; border-radius: 15px; background: rgba(255,255,255,0.05); display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 900; font-size: 22px; transition: 0.3s; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; }
+        .lvl-btn.passed { background: rgba(255, 215, 0, 0.15); border-color: rgba(255,215,0,0.5); color: var(--gold); }
+        .lvl-btn.current { background: rgba(255, 20, 83, 0.3); border-color: var(--primary); box-shadow: var(--neon); animation: pulse 1.5s infinite; color: white; }
+        .lvl-btn.locked { opacity: 0.3; color: #666; cursor: default; }
+        .lvl-desc { font-size: 10px; margin-top: 2px; opacity: 0.8; font-weight: 400; }
+        .diary-word { background: rgba(255,255,255,0.1); padding: 10px 15px; border-radius: 10px; font-family: 'Pacifico', cursive; font-size: 22px; color: var(--primary-light); border: 1px solid rgba(255,255,255,0.2); }
+
+        /* --- ОСНОВНАЯ ИГРА --- */
+        #game-screen { background: url('background.png') center/cover no-repeat; }
+        #game-screen::before { content: ''; position: absolute; top:0; left:0; width:100%; height:100%; background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 100%); z-index: 2; pointer-events: none; }
+        
+        #ui-container { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); width: 85%; z-index: 100; text-align: center; pointer-events: none; background: rgba(0,0,0,0.4); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 10px 0; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .level-indicator { font-family: 'Pacifico', cursive; font-size: 24px; color: var(--gold); margin-bottom: 5px; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+        #progress-bar { width: 80%; height: 12px; background: rgba(0,0,0,0.5); border-radius: 10px; margin: 0 auto; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.8); }
+        #progress-fill { width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary-light), var(--primary)); transition: width 0.3s; box-shadow: 0 0 10px var(--primary); }
+        .target-text { font-size: 14px; font-weight: 900; margin-top: 5px; color: #eee; }
+        #btn-pause { position: absolute; top: 25px; right: 25px; font-size: 24px; z-index: 110; cursor: pointer; pointer-events: auto; text-shadow: 2px 2px 4px black; }
+
+        #player { position: absolute; bottom: -5vh; left: 50%; transform: translateX(-50%); width: 150vw; max-width: 700px; height: 95vh; background: url('zhanna_fixed.png') no-repeat bottom center; background-size: contain; z-index: 5; pointer-events: none; filter: drop-shadow(0 0 40px rgba(0,0,0,0.9)) brightness(0.95); }
+
+        /* СЕРДЕЧКИ */
+        .heart-fall { position: absolute; width: 45px; height: 45px; z-index: 20; cursor: pointer; transform-origin: center; }
+        .heart-red { background: url("data:image/svg+xml;charset=UTF-8,%3csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3e%3cdefs%3e%3clinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3e%3cstop offset='0%25' stop-color='%23ff7eb3'/%3e%3cstop offset='100%25' stop-color='%23ff1453'/%3e%3c/linearGradient%3e%3c/defs%3e%3cpath d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z' fill='url(%23g)' stroke='%23ff9a9e' stroke-width='0.5'/%3e%3c/svg%3e") no-repeat center/contain; filter: drop-shadow(0 5px 10px rgba(255,20,83,0.5)); }
+        .heart-gold { background: url("data:image/svg+xml;charset=UTF-8,%3csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3e%3cdefs%3e%3clinearGradient id='g2' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3e%3cstop offset='0%25' stop-color='%23ffe259'/%3e%3cstop offset='100%25' stop-color='%23ffa751'/%3e%3c/linearGradient%3e%3c/defs%3e%3cpath d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z' fill='url(%23g2)' stroke='%23ffffff' stroke-width='0.5'/%3e%3c/svg%3e") no-repeat center/contain; filter: drop-shadow(0 5px 15px rgba(255,215,0,0.8)); }
+
+        /* БОСС И СЮЖЕТ */
+        .dialog-box { width: 90%; max-width: 500px; background: rgba(10, 20, 35, 0.9); border: 2px solid var(--primary); border-radius: 15px; padding: 20px; box-sizing: border-box; box-shadow: 0 0 30px rgba(0,0,0,0.8); }
+        .dialog-name { font-weight: 900; font-size: 16px; margin-bottom: 5px; color: #ff1453; }
+        .dialog-text { font-family: 'Pacifico', cursive; font-size: 22px; color: white; line-height: 1.3; min-height: 60px; white-space: pre-wrap; word-wrap: break-word; letter-spacing: 1px; }
+        #btn-dialog-reply { margin-top: 15px; align-self: flex-end; display: none; }
+
+        .boss-container { position: absolute; width: 150px; height: 150px; z-index: 50; text-align: center; cursor: pointer; animation: bossDrop 1s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        
+        /* ИСПРАВЛЕНИЕ: Новый плазменный щит Босса */
+        .boss-shield { position: absolute; top:-15px; left:-15px; right:-15px; bottom:-15px; border-radius: 38% 62% 63% 37% / 41% 44% 56% 59%; border: 3px solid rgba(0, 255, 255, 0.9); box-shadow: 0 0 25px #00f0ff, inset 0 0 25px #ff00ff; background: linear-gradient(135deg, rgba(255, 20, 83, 0.25), rgba(0, 240, 255, 0.25)); pointer-events: none; transition: opacity 0.3s; animation: plasmaShield 3s linear infinite; }
+        
+        .boss-heart { font-size: 110px; filter: drop-shadow(0 0 30px #800080); transition: all 0.1s; line-height: 1; animation: bossPulse 0.8s infinite alternate; }
+        .boss-hit .boss-heart { filter: drop-shadow(0 0 50px white) brightness(2) !important; transform: scale(0.85); }
+        .boss-hp-bar { position: absolute; top: -20px; width: 100%; height: 8px; background: rgba(0,0,0,0.8); border: 2px solid #fff; border-radius: 5px; overflow: hidden; }
+        .boss-hp-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #ff0000, #ff7eb3); transition: width 0.1s; }
+
+        /* --- МИНИ ИГРЫ --- */
+        .mg-screen { background: rgba(10, 20, 35, 0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .mg-title { font-family: 'Pacifico', cursive; font-size: 35px; color: var(--gold); margin-bottom: 15px; text-shadow: 0 0 10px var(--gold); }
+        .mg-stats { font-weight: 900; font-size: 18px; margin-bottom: 15px; color: white; }
+        .mg-stats span { color: var(--primary-light); }
+
+        /* Три в ряд */
+        #m3-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; width: 90vw; max-width: 380px; height: 90vw; max-height: 380px; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 15px; box-sizing: border-box; }
+        .m3-cell { background: rgba(0,0,0,0.3); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 35px; cursor: pointer; position: relative; }
+        .m3-cell.selected { background: rgba(255,20,83,0.5); border: 2px solid var(--gold); box-sizing: border-box; }
+        .m3-item { position: absolute; transition: transform 0.3s; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+
+        /* Найди пару */
+        #mem-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; width: 90vw; max-width: 350px; }
+        .mem-card { aspect-ratio: 1; background: linear-gradient(45deg, var(--primary), var(--primary-light)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 40px; cursor: pointer; transition: transform 0.4s; transform-style: preserve-3d; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        .mem-card.flip { transform: rotateY(180deg); background: #fff; }
+        .mem-card .sym { transform: rotateY(180deg); display: none; }
+        .mem-card.flip .sym { display: block; }
+
+        /* Ловец звезд */
+        #catch-area { position: relative; width: 95vw; max-width: 400px; height: 60vh; background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.2); border-radius: 15px; overflow: hidden; }
+        #basket { position: absolute; bottom: 15px; left: 50%; width: 80px; height: 20px; background: var(--primary); border-radius: 10px; transform: translateX(-50%); box-shadow: 0 0 20px var(--primary); pointer-events: none; }
+        .c-item { position: absolute; font-size: 30px; z-index: 10; pointer-events: none; }
+
+        /* --- СКРЕТЧ-ПИСЬМО --- */
+        #scratch-container { position: relative; width: 280px; height: 120px; margin-top: 20px; border-radius: 15px; overflow: hidden; box-shadow: 0 0 30px rgba(255,255,255,0.2); }
+        #scratch-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; cursor: crosshair; touch-action: none; }
+        .secret-word-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #fff; display: flex; align-items: center; justify-content: center; flex-direction: column; z-index: 2; }
+        .sw-title { font-family: 'Montserrat', sans-serif; font-size: 12px; color: #888; font-weight: bold; margin-bottom: 5px; }
+        .sw-word { font-family: 'Pacifico', cursive; font-size: 32px; color: var(--primary); }
+        .btn-continue-wrap { opacity: 0; pointer-events: none; transition: opacity 0.5s; margin-top: 30px; width: 100%; display: flex; justify-content: center; }
+        .btn-continue-wrap.show { opacity: 1; pointer-events: auto; }
+
+        /* ЭФФЕКТЫ */
+        .cinematic-text { font-family: 'Pacifico', cursive; font-size: 45px; color: var(--primary); text-shadow: 0 0 30px var(--primary); }
+        .dmg-text { position: absolute; color: white; font-weight: 900; font-size: 28px; text-shadow: 0 0 5px red; z-index: 60; pointer-events: none; animation: floatDmg 0.8s forwards; }
+        .crit-text { position: absolute; color: #ffd700; font-weight: 900; font-size: 40px; text-shadow: 0 0 10px red; z-index: 65; pointer-events: none; animation: floatDmg 0.8s forwards; }
+        .micro-spark { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 200; pointer-events: none; }
+        
+        /* Анимации */
+        @keyframes plasmaShield { 0% { border-radius: 38% 62% 63% 37% / 41% 44% 56% 59%; transform: rotate(0deg); } 50% { border-radius: 50% 50% 30% 70% / 60% 30% 70% 40%; } 100% { border-radius: 38% 62% 63% 37% / 41% 44% 56% 59%; transform: rotate(360deg); } }
+        @keyframes bossPulse { 0% { transform: scale(0.95); } 100% { transform: scale(1.1); } }
+        @keyframes bossDrop { 0% { transform: translateY(-300px) scale(0.5); opacity: 0; } 60% { transform: translateY(20px) scale(1.1); opacity: 1; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+        @keyframes floatDmg { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-50px) scale(1.5); opacity: 0; } }
+        @keyframes pulse { 0% { transform: scale(1); } 100% { transform: scale(1.05); } }
+        @keyframes sweep { 0% { left: -100%; } 20% { left: 200%; } 100% { left: 200%; } }
+        @keyframes floatMenu { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+        @keyframes screenShake { 0%, 100% {transform: translate(0,0);} 25% {transform: translate(5px,5px);} 50% {transform: translate(-5px,-5px);} 75% {transform: translate(5px,-5px);} }
+    </style>
+</head>
+<body>
+
+    <div id="menu-screen" class="screen active">
+        <div id="menu-zhanna"></div>
+        <div id="menu-ui">
+            <h1 class="menu-title">Love Quest</h1>
+            <div class="btn-glass" onclick="startGame()">Начать Игру</div>
+            <div class="btn-glass" onclick="showLevels()">Уровни</div>
+            <div class="btn-glass" onclick="showDiary()">Письма</div>
+        </div>
+        <div class="menu-special-text">Для моей любимой Жанны</div>
+        <div class="menu-footer">v19.0 (Perfect 360)</div>
+    </div>
+
+    <div id="levels-screen" class="screen flex-top">
+        <div class="screen-title">Твой Путь</div>
+        <div id="levels-grid"></div>
+        <div class="btn-glass" style="margin-top: auto; flex-shrink: 0;" onclick="showScreen('menu-screen')">⬅ Назад</div>
+    </div>
+
+    <div id="diary-screen" class="screen flex-top">
+        <div class="screen-title">Наши Слова</div>
+        <div id="diary-grid"></div>
+        <div class="btn-glass" style="margin-top: auto; flex-shrink: 0;" onclick="showScreen('menu-screen')">⬅ Назад</div>
+    </div>
+
+    <div id="game-screen" class="screen">
+        <div id="ui-container">
+            <div class="level-indicator" id="lvl-ind">Уровень 1</div>
+            <div id="progress-bar"><div id="progress-fill"></div></div>
+            <div class="target-text">Собрано: <span id="score">0</span> / <span id="target">50</span></div>
+        </div>
+        <div id="btn-pause" onclick="togglePause()">⏸</div>
+        <div id="game-content">
+            <div id="player"></div>
+        </div>
+    </div>
+
+    <div id="m3-screen" class="screen flex-center">
+        <div class="mg-title">Три в ряд</div>
+        <div class="mg-stats">Очки: <span id="m3-score">0</span>/<span id="m3-target">1500</span> | Ходы: <span id="m3-moves">40</span></div>
+        <div id="m3-grid"></div>
+    </div>
+    
+    <div id="memory-screen" class="screen flex-center">
+        <div class="mg-title">Найди Пару</div>
+        <div class="mg-stats">Осталось пар: <span id="mem-left">6</span></div>
+        <div id="mem-grid"></div>
+    </div>
+
+    <div id="catcher-screen" class="screen flex-center">
+        <div class="mg-title">Неоновый Ловец</div>
+        <div class="mg-stats">Собрано: <span id="catch-score">0</span>/20</div>
+        <div id="catch-area">
+            <div id="basket"></div>
+        </div>
+    </div>
+
+    <div id="letter-screen" class="screen flex-center">
+        <div class="mg-title">Секретное послание</div>
+        <div style="color: white; font-weight: bold; margin-bottom: 10px;">Сотри защитный слой пальцем!</div>
+        <div id="scratch-container">
+            <div class="secret-word-bg">
+                <div class="sw-title">Секретное слово:</div>
+                <div class="sw-word" id="secret-word-text">СЛОВО</div>
+            </div>
+            <canvas id="scratch-canvas"></canvas>
+        </div>
+        <div class="btn-continue-wrap" id="btn-letter-next">
+            <div class="btn-glass" onclick="finishLevelSequence()">Запомнить и выйти</div>
+        </div>
+    </div>
+
+    <div id="cinematic-overlay" class="ui-overlay"><div id="cinematic-text" class="cinematic-text"></div></div>
+    <div id="pause-overlay" class="ui-overlay" style="background: rgba(0,0,0,0.95);">
+        <div class="cinematic-text" style="margin-bottom: 30px;">Пауза</div>
+        <div class="btn-glass" onclick="togglePause()">Продолжить</div>
+        <div class="btn-glass" style="margin-top: 15px; background: rgba(255,20,83,0.3);" onclick="exitToMenu()">Выйти в меню</div>
+    </div>
+    <div id="dialog-overlay" class="ui-overlay" style="justify-content: flex-end; padding-bottom: 10vh;">
+        <div class="dialog-box">
+            <div class="dialog-name" id="dg-name">Босс</div>
+            <div class="dialog-text" id="dg-text"></div>
+            <div class="btn-glass" id="btn-dialog-reply" onclick="closeDialogAndBoss()">Ответить</div>
+        </div>
+    </div>
+
+    <script>
+        try { if (window.Telegram && window.Telegram.WebApp) { window.Telegram.WebApp.expand(); } } catch(e) {}
+
+        let maxLevel = 20;
+        let currentLevel = 1;
+        let unlockedWords = [];
+        
+        try { 
+            let savedLvl = window.localStorage.getItem('zhanna_level_v19'); 
+            if(savedLvl) currentLevel = parseInt(savedLvl); 
+            let savedWords = window.localStorage.getItem('zhanna_words_v19');
+            if(savedWords) unlockedWords = JSON.parse(savedWords);
+        } catch(e) {}
+        
+        let activeLevel = currentLevel; 
+        
+        const secretWords = ["", "Когда", "ты", "пройдешь", "эту", "игру", "полностью,", "пожалуйста,", "сразу", "скажи", "мне", "об", "этом.", "Тебя", "там", "будет", "ждать", "особенный", "приз,", "моя", "Любимая!"];
+        
+        const dialogs = [
+            { b: "Тебе не преодолеть это расстояние!", z: "Моя любовь сильнее любой преграды!" },
+            { b: "Время и километры разрушат всё!", z: "Они лишь делают наши чувства крепче!" },
+            { b: "Ты сдашься на полпути!", z: "Ради Сережи я дойду до самого конца!" },
+            { b: "Ты правда веришь в эту сказку?", z: "Это не сказка, это наша жизнь!" },
+            { b: "Я заморожу твое сердце!", z: "Его согревают мысли о нем!" },
+            { b: "Сотни километров... Ты устанешь!", z: "Каждый шаг приближает меня к счастью!" },
+            { b: "Никто не способен на такое терпение!", z: "Значит, я буду первой!" },
+            { b: "Ваш огонь скоро погаснет!", z: "Он пылает ярче солнца!" },
+            { b: "Иллюзии разобьются о реальность!", z: "Наша реальность — это любовь!" },
+            { b: "Ты одна в этом лесу!", z: "Он всегда держит меня за руку. Даже сейчас." },
+            { b: "Слова ничего не значат на расстоянии!", z: "В каждом его слове — весь мир!" },
+            { b: "Тебе не хватит сил!", z: "Любовь дает мне крылья!" }
+        ];
+
+        let score = 0, targetHearts = 0;
+        let gameActive = false, isPaused = false;
+        let phase = 'hearts';
+        let spawnInterval, bossLoopId, bosses = [];
+        let currentState = 'menu-screen';
+
+        const content = document.getElementById('game-content');
+
+        function vibe(type) { try { if (navigator.vibrate) { if(type === 'heavy') navigator.vibrate([40, 60, 40]); else navigator.vibrate(15); } } catch(e) {} }
+        
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+            currentState = screenId;
+        }
+
+        function showOverlay(overlayId) { document.getElementById(overlayId).classList.add('show'); }
+        function hideOverlay(overlayId) { document.getElementById(overlayId).classList.remove('show'); }
+
+        // --- МЕНЮ И ДНЕВНИК ---
+        function showLevels() {
+            const grid = document.getElementById('levels-grid'); grid.innerHTML = '';
+            for(let i=1; i<=maxLevel; i++) {
+                let btn = document.createElement('div'); btn.className = 'lvl-btn';
+                if(i < currentLevel) { btn.classList.add('passed'); btn.innerHTML = i + '<br><span class="lvl-desc">Пройден</span>'; }
+                else if(i === currentLevel) { btn.classList.add('current'); btn.innerHTML = i + '<br><span class="lvl-desc">Играть</span>'; btn.onclick = function() { activeLevel = i; startLevel(); }; }
+                else { btn.classList.add('locked'); btn.innerHTML = '🔒<br><span class="lvl-desc">' + (i*50) + ' ❤️</span>'; }
+                grid.appendChild(btn);
+            }
+            showScreen('levels-screen');
+        }
+
+        function showDiary() {
+            const grid = document.getElementById('diary-grid'); grid.innerHTML = '';
+            unlockedWords.forEach(w => {
+                let el = document.createElement('div'); el.className = 'diary-word'; el.innerText = w;
+                grid.appendChild(el);
+            });
+            if(unlockedWords.length === 0) grid.innerHTML = '<div style="color: white; font-weight: bold;">Пройди уровни, чтобы найти слова!</div>';
+            showScreen('diary-screen');
+        }
+
+        function startGame() { activeLevel = currentLevel; startLevel(); }
+
+        function exitToMenu() {
+            gameActive = false; isPaused = false;
+            clearInterval(spawnInterval);
+            if(bossLoopId) cancelAnimationFrame(bossLoopId);
+            hideOverlay('pause-overlay');
+            showScreen('menu-screen');
+        }
+
+        // --- ОСНОВНАЯ ИГРА ---
+        function startLevel() {
+            showScreen('game-screen');
+            gameActive = true; isPaused = false; phase = 'hearts';
+            targetHearts = activeLevel * 50; score = 0;
+            
+            document.getElementById('lvl-ind').innerText = "Уровень " + activeLevel;
+            updateProgress();
+            
+            document.querySelectorAll('.heart-fall, .boss-container').forEach(el => el.remove());
+            bosses = [];
+            
+            clearInterval(spawnInterval);
+            // ИСПРАВЛЕНИЕ: Ускоряем спавн на 50%
+            spawnInterval = setInterval(spawnHeart, Math.max(300, 750 - activeLevel*20));
+            if(bossLoopId) cancelAnimationFrame(bossLoopId);
+            updateBosses();
+        }
+
+        function togglePause() {
+            if(!gameActive && !isPaused) return;
+            isPaused = !isPaused;
+            if(isPaused) showOverlay('pause-overlay');
+            else hideOverlay('pause-overlay');
+        }
+
+        // 360 Спавн + Новые шансы очков (70% для 2, 30% для 8)
+        function spawnHeart() {
+            if(!gameActive || isPaused || phase !== 'hearts') return;
+            
+            const h = document.createElement('div');
+            let isGold = Math.random() > 0.9;
+            h.className = 'heart-fall ' + (isGold ? 'heart-gold' : 'heart-red');
+            
+            // Фишка: Логика очков по запросу (70% красное дает 2, 30% золотое дает 8)
+            let earned = 1;
+            if (isGold) {
+                earned = Math.random() < 0.3 ? 8 : 3;
+            } else {
+                earned = Math.random() < 0.7 ? 2 : 1;
+            }
+            h.dataset.val = earned;
+            
+            let scale = 1.3 + Math.random() * 0.5; // Еще крупнее
+            let side = Math.floor(Math.random() * 4); 
+            
+            let startX, startY, endX, endY;
+            let w = window.innerWidth, hght = window.innerHeight;
+            
+            if (side === 0) { // Снизу
+                startX = Math.random() * w; startY = hght + 100;
+                endX = Math.random() * w; endY = -100;
+            } else if (side === 1) { // Сверху
+                startX = Math.random() * w; startY = -100;
+                endX = Math.random() * w; endY = hght + 100;
+            } else if (side === 2) { // Слева
+                startX = -100; startY = Math.random() * hght;
+                endX = w + 100; endY = Math.random() * hght;
+            } else { // Справа
+                startX = w + 100; startY = Math.random() * hght;
+                endX = -100; endY = Math.random() * hght;
+            }
+            
+            h.style.left = startX + 'px';
+            h.style.top = startY + 'px';
+            content.appendChild(h);
+            
+            let duration = Math.random() * 3000 + 3500 - (activeLevel * 50); 
+            
+            let anim = h.animate([
+                { transform: `translate(0px, 0px) scale(${scale}) rotate(0deg)`, opacity: 0 },
+                { opacity: 1, offset: 0.1 },
+                { opacity: 1, offset: 0.9 },
+                { transform: `translate(${endX - startX}px, ${endY - startY}px) scale(${scale}) rotate(${Math.random()*180 - 90}deg)`, opacity: 0 }
+            ], { duration: duration, fill: 'forwards' });
+            
+            anim.onfinish = () => { if (content.contains(h)) h.remove(); };
+
+            h.onpointerdown = function(e) {
+                e.preventDefault(); if(h.dataset.dead) return;
+                h.dataset.dead = "true";
+                
+                vibe('light'); score += parseInt(h.dataset.val); updateProgress(); 
+                
+                anim.cancel();
+                
+                let cx = e.clientX || (e.touches ? e.touches[0].clientX : window.innerWidth/2);
+                let cy = e.clientY || (e.touches ? e.touches[0].clientY : window.innerHeight/2);
+                
+                h.style.left = cx + 'px';
+                h.style.top = cy + 'px';
+                h.style.transform = `translate(-50%, -50%) scale(${scale * 2.5})`;
+                h.style.transition = 'all 0.2s';
+                h.style.opacity = '0';
+                
+                setTimeout(() => h.remove(), 200);
+                
+                if(score >= targetHearts && phase === 'hearts') {
+                    phase = 'dialog';
+                    triggerDialog();
+                }
+            };
+        }
+
+        function updateProgress() {
+            document.getElementById('score').innerText = score;
+            document.getElementById('progress-fill').style.width = Math.min(100, (score/targetHearts)*100) + '%';
+        }
+
+        // --- ДИАЛОГИ И БОСС ---
+        function triggerDialog() {
+            gameActive = false; clearInterval(spawnInterval);
+            
+            document.querySelectorAll('.heart-fall').forEach(el => el.remove());
+            
+            let dObj = dialogs[(activeLevel - 1) % dialogs.length];
+            let textEl = document.getElementById('dg-text');
+            let btn = document.getElementById('btn-dialog-reply');
+            
+            textEl.textContent = ""; btn.style.display = "none";
+            showOverlay('dialog-overlay');
+            
+            let i = 0;
+            let typeInt = setInterval(() => {
+                let char = dObj.b.charAt(i);
+                if (char === ' ') char = '\u00A0'; // Неразрывный пробел
+                textEl.innerHTML += char;
+                i++;
+                if(i >= dObj.b.length) {
+                    clearInterval(typeInt);
+                    setTimeout(() => { btn.innerText = dObj.z; btn.style.display = "block"; }, 500);
+                }
+            }, 40);
+        }
+
+        function closeDialogAndBoss() {
+            vibe('light');
+            hideOverlay('dialog-overlay');
+            
+            showCinematic("БОСС!", function() {
+                document.getElementById('target').innerText = "Победи Босса!";
+                let hp = activeLevel <= 4 ? 400 + activeLevel * 100 : 1000 + (activeLevel - 5) * 200; 
+                createBoss(hp);
+                gameActive = true;
+                phase = 'boss';
+            }, 1500);
+        }
+
+        function createBoss(maxHp) {
+            const b = document.createElement('div');
+            b.className = 'boss-container';
+            b.innerHTML = '<div class="boss-shield"></div><div class="boss-hp-bar"><div class="boss-hp-fill"></div></div><div class="boss-heart">🖤</div>';
+            
+            let speed = 2 + activeLevel*0.1; 
+            let bossObj = { el: b, hp: maxHp, maxHp: maxHp, shield: true, invul: false, x: Math.random() * (window.innerWidth - 150), y: window.innerHeight * 0.25, dx: (Math.random()>0.5?1:-1)*speed, dy: (Math.random()>0.5?1:-1)*speed };
+            
+            b.style.left = bossObj.x + 'px'; b.style.top = bossObj.y + 'px'; content.appendChild(b);
+            
+            setTimeout(() => { vibe('heavy'); document.body.style.animation = 'screenShake 0.4s'; setTimeout(()=>document.body.style.animation='', 400); }, 600);
+
+            b.onpointerdown = function(e) {
+                e.preventDefault(); if(isPaused || bossObj.hp <= 0 || bossObj.invul) return; 
+                vibe('heavy'); 
+                
+                let isCrit = (Date.now() % 800) < 200;
+                
+                // ИСПРАВЛЕНИЕ: Плавающий урон (3, 4 или 5)
+                let normalDmg = [3, 4, 5][Math.floor(Math.random() * 3)];
+                let dmgVal = isCrit ? 25 : normalDmg; 
+                let actualDmg = 0;
+                
+                if(bossObj.shield && bossObj.hp > bossObj.maxHp * 0.5) {
+                    actualDmg = normalDmg;
+                    bossObj.hp -= actualDmg; 
+                    b.querySelector('.boss-shield').style.opacity = '0.5'; 
+                    setTimeout(() => b.querySelector('.boss-shield').style.opacity = '1', 100);
+                } else {
+                    if(bossObj.shield) { 
+                        bossObj.shield = false; 
+                        b.querySelector('.boss-shield').style.opacity = '0'; 
+                        vibe('heavy'); 
+                    }
+                    actualDmg = dmgVal; 
+                    bossObj.hp -= actualDmg; 
+                }
+                
+                bossObj.invul = true; setTimeout(()=>bossObj.invul = false, 80); 
+                b.classList.add('boss-hit'); setTimeout(() => b.classList.remove('boss-hit'), 100);
+                
+                let pct = bossObj.hp / bossObj.maxHp;
+                if(pct < 0.3) b.querySelector('.boss-heart').style.filter = 'drop-shadow(0 0 40px red)';
+                else if(pct < 0.6) b.querySelector('.boss-heart').style.filter = 'drop-shadow(0 0 30px orange)';
+                
+                const fill = b.querySelector('.boss-hp-fill');
+                fill.style.width = (pct * 100) + '%';
+                if(pct < 0.3) fill.style.background = '#ff0000';
+                
+                let dmgText = document.createElement('div');
+                if(isCrit && !bossObj.shield) {
+                    dmgText.className = 'crit-text'; dmgText.innerText = "КРИТ!";
+                    document.body.style.animation = 'screenShake 0.2s'; setTimeout(()=>document.body.style.animation='', 200);
+                } else {
+                    dmgText.className = 'dmg-text'; dmgText.innerText = `-${actualDmg}`;
+                }
+                dmgText.style.left = (bossObj.x + 60 + (Math.random()*40-20)) + 'px'; dmgText.style.top = bossObj.y + 'px';
+                content.appendChild(dmgText); setTimeout(() => dmgText.remove(), 800);
+                
+                if(bossObj.hp <= 0) {
+                    b.remove();
+                    bosses = []; 
+                    setTimeout(chooseRandomMinigame, 500); 
+                }
+            };
+            bosses.push(bossObj);
+        }
+
+        function updateBosses() {
+            if(!isPaused && gameActive && phase === 'boss') {
+                for(let i=0; i<bosses.length; i++) {
+                    let b = bosses[i]; b.x += b.dx; b.y += b.dy;
+                    if(b.x <= 0 || b.x >= window.innerWidth - 150) b.dx *= -1;
+                    if(b.y <= window.innerHeight * 0.15 || b.y >= window.innerHeight * 0.55) b.dy *= -1;
+                    b.el.style.left = b.x + 'px'; b.el.style.top = b.y + 'px';
+                }
+            }
+            bossLoopId = requestAnimationFrame(updateBosses);
+        }
+
+        // --- РУЛЕТКА МИНИ-ИГР ---
+        function chooseRandomMinigame() {
+            gameActive = false; phase = 'done';
+            showCinematic("ОТЛИЧНО!", function() {
+                let r = Math.random();
+                if(r < 0.33) initMatch3();
+                else if(r < 0.66) initMemory();
+                else initCatcher();
+            }, 1500);
+        }
+
+        // 1. ТРИ В РЯД
+        let m3Grid = [], m3Score = 0, m3Moves = 40, m3Target = 1500, m3Active = false;
+        const m3Colors = ['❤️', '💛', '💙', '💚', '💜'];
+        
+        function initMatch3() {
+            showScreen('m3-screen');
+            m3Score = 0; m3Moves = 40; m3Target = 1500; 
+            document.getElementById('m3-score').innerText = m3Score;
+            document.getElementById('m3-moves').innerText = m3Moves;
+            document.getElementById('m3-target').innerText = m3Target;
+            
+            const gridEl = document.getElementById('m3-grid'); gridEl.innerHTML = '';
+            m3Grid = [];
+            
+            for(let i=0; i<36; i++) {
+                let cell = document.createElement('div'); cell.className = 'm3-cell';
+                let item = document.createElement('div'); item.className = 'm3-item';
+                let color = m3Colors[Math.floor(Math.random() * m3Colors.length)];
+                
+                while((i%6 >= 2 && m3Grid[i-1].item === color && m3Grid[i-2].item === color) || (i >= 12 && m3Grid[i-6].item === color && m3Grid[i-12].item === color)) {
+                    color = m3Colors[Math.floor(Math.random() * m3Colors.length)];
+                }
+                
+                item.innerText = color; cell.appendChild(item); gridEl.appendChild(cell);
+                m3Grid.push({ el: cell, itemEl: item, item: color });
+                cell.onpointerdown = () => onM3Click(i);
+            }
+            m3Active = true;
+        }
+
+        let m3Selected = null;
+        function onM3Click(idx) {
+            if(!m3Active) return; vibe('light');
+            if(m3Selected === null) {
+                m3Selected = idx; m3Grid[idx].el.classList.add('selected');
+            } else {
+                let sId = m3Selected; m3Selected = null; m3Grid[sId].el.classList.remove('selected');
+                let r1 = Math.floor(sId/6), c1 = sId%6, r2 = Math.floor(idx/6), c2 = idx%6;
+                if(Math.abs(r1-r2) + Math.abs(c1-c2) === 1) swapM3(sId, idx, true);
+            }
+        }
+
+        function swapM3(id1, id2, check) {
+            m3Active = false;
+            let el1 = m3Grid[id1].itemEl; let el2 = m3Grid[id2].itemEl;
+            
+            let dx = (id2%6 - id1%6) * 100;
+            let dy = (Math.floor(id2/6) - Math.floor(id1/6)) * 100;
+            
+            el1.style.transform = `translate(${dx}%, ${dy}%)`;
+            el2.style.transform = `translate(${-dx}%, ${-dy}%)`;
+            
+            setTimeout(() => {
+                el1.style.transition = 'none'; el2.style.transition = 'none';
+                el1.style.transform = 'translate(0,0)'; el2.style.transform = 'translate(0,0)';
+                
+                let temp = m3Grid[id1].item; m3Grid[id1].item = m3Grid[id2].item; m3Grid[id2].item = temp;
+                el1.innerText = m3Grid[id1].item; el2.innerText = m3Grid[id2].item;
+                
+                setTimeout(() => {
+                    el1.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+                    el2.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+                    
+                    if(check) {
+                        m3Moves--; document.getElementById('m3-moves').innerText = m3Moves;
+                        let matches = findMatches();
+                        if(matches.length > 0) {
+                            processMatches(matches);
+                        } else { 
+                            swapM3(id1, id2, false); 
+                            setTimeout(() => {
+                                m3Active = true; 
+                                if(m3Moves <= 0) checkMinigameWin(m3Score, m3Target, m3Moves);
+                            }, 300);
+                        } 
+                    }
+                }, 50);
+            }, 300);
+        }
+
+        function findMatches() {
+            let m = new Set();
+            for(let r=0; r<6; r++) for(let c=0; c<4; c++) { let i=r*6+c; if(m3Grid[i].item && m3Grid[i].item===m3Grid[i+1].item && m3Grid[i].item===m3Grid[i+2].item) { m.add(i); m.add(i+1); m.add(i+2); } }
+            for(let c=0; c<6; c++) for(let r=0; r<4; r++) { let i=r*6+c; if(m3Grid[i].item && m3Grid[i].item===m3Grid[i+6].item && m3Grid[i].item===m3Grid[i+12].item) { m.add(i); m.add(i+6); m.add(i+12); } }
+            return Array.from(m);
+        }
+
+        function processMatches(matches) {
+            vibe('heavy');
+            m3Score += matches.length * 20; 
+            document.getElementById('m3-score').innerText = m3Score;
+            
+            matches.forEach(i => { 
+                let rect = m3Grid[i].el.getBoundingClientRect();
+                for(let p=0; p<4; p++) {
+                    let pt = document.createElement('div'); pt.className='micro-spark';
+                    pt.style.background = m3Grid[i].item === '❤️' ? '#ff1453' : m3Grid[i].item === '💛' ? '#ffd700' : m3Grid[i].item === '💙' ? '#00f0ff' : '#00ff00';
+                    pt.style.left = (rect.left + rect.width/2) + 'px'; pt.style.top = (rect.top + rect.height/2) + 'px';
+                    document.body.appendChild(pt);
+                    let ang=Math.random()*Math.PI*2, vel=Math.random()*50+20;
+                    pt.animate([{transform:'translate(0,0)'}, {transform:`translate(${Math.cos(ang)*vel}px, ${Math.sin(ang)*vel}px) scale(0)`}], {duration:500});
+                    setTimeout(()=>pt.remove(),500);
+                }
+                m3Grid[i].itemEl.style.transform = 'scale(0)'; 
+                m3Grid[i].item = null; 
+            });
+            
+            setTimeout(() => {
+                for(let c=0; c<6; c++) for(let r=5; r>=0; r--) if(m3Grid[r*6+c].item === null) for(let k=r-1; k>=0; k--) if(m3Grid[k*6+c].item !== null) { m3Grid[r*6+c].item = m3Grid[k*6+c].item; m3Grid[k*6+c].item = null; m3Grid[r*6+c].itemEl.innerText = m3Grid[r*6+c].item; m3Grid[k*6+c].itemEl.innerText = ''; m3Grid[r*6+c].itemEl.style.transform = 'scale(1)'; break; }
+                for(let i=0; i<36; i++) if(m3Grid[i].item === null) { m3Grid[i].item = m3Colors[Math.floor(Math.random() * m3Colors.length)]; m3Grid[i].itemEl.innerText = m3Grid[i].item; m3Grid[i].itemEl.style.transform = 'scale(0)'; setTimeout(() => m3Grid[i].itemEl.style.transform = 'scale(1)', 50); }
+                
+                setTimeout(() => { let nm = findMatches(); if(nm.length > 0) processMatches(nm); else checkMinigameWin(m3Score, m3Target, m3Moves); }, 400);
+            }, 300);
+        }
+
+        // 2. НАЙДИ ПАРУ (MEMORY)
+        let memLeft = 6, memActive = false, memSelected = [];
+        function initMemory() {
+            showScreen('memory-screen');
+            memLeft = 6; memSelected = []; document.getElementById('mem-left').innerText = memLeft;
+            let el = document.getElementById('mem-grid'); el.innerHTML = '';
+            let syms = ['🧸', '🌹', '💍', '💌', '✈️', '💋'];
+            let deck = [...syms, ...syms].sort(() => Math.random() - 0.5);
+            
+            deck.forEach((s) => {
+                let c = document.createElement('div'); c.className = 'mem-card';
+                c.innerHTML = `<div class="sym">${s}</div>`;
+                c.onpointerdown = () => onMemClick(c, s);
+                el.appendChild(c);
+            });
+            memActive = true;
+        }
+
+        function onMemClick(c, s) {
+            if(!memActive || memSelected.length >= 2 || c.classList.contains('flip')) return;
+            vibe('light'); c.classList.add('flip'); memSelected.push({el: c, s: s});
+            
+            if(memSelected.length === 2) {
+                memActive = false;
+                setTimeout(() => {
+                    if(memSelected[0].s === memSelected[1].s) {
+                        memSelected[0].el.style.opacity = 0; memSelected[1].el.style.opacity = 0;
+                        memLeft--; document.getElementById('mem-left').innerText = memLeft;
+                        if(memLeft <= 0) checkMinigameWin(1, 1, 1);
+                    } else {
+                        memSelected[0].el.classList.remove('flip'); memSelected[1].el.classList.remove('flip');
+                    }
+                    memSelected = []; memActive = true;
+                }, 800);
+            }
+        }
+
+        // 3. ЛОВЕЦ ЗВЕЗД
+        let catchScore = 0, catchInt;
+        function initCatcher() {
+            showScreen('catcher-screen');
+            catchScore = 0; document.getElementById('catch-score').innerText = catchScore;
+            let area = document.getElementById('catch-area');
+            let basket = document.getElementById('basket');
+            
+            let moveBasket = (e) => {
+                let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                let rect = area.getBoundingClientRect();
+                let x = Math.max(40, Math.min(rect.width - 40, clientX - rect.left));
+                basket.style.left = x + 'px';
+            };
+            
+            area.addEventListener('touchmove', moveBasket, {passive: false});
+            area.addEventListener('pointermove', moveBasket);
+            
+            clearInterval(catchInt);
+            catchInt = setInterval(() => {
+                if(currentState !== 'catcher-screen') { clearInterval(catchInt); return; }
+                let item = document.createElement('div'); item.className = 'c-item';
+                let isStar = Math.random() > 0.3;
+                item.innerText = isStar ? '⭐' : '❄️';
+                item.style.left = (Math.random()*80 + 10) + '%'; item.style.top = '0px';
+                area.appendChild(item);
+                
+                let y = 0;
+                let fallInt = setInterval(() => {
+                    y += 5; item.style.top = y + 'px';
+                    let bLeft = parseInt(basket.style.left) || area.clientWidth/2;
+                    let iLeft = parseInt(item.style.left)/100 * area.clientWidth;
+                    
+                    if(y > area.clientHeight - 40 && Math.abs(iLeft - bLeft) < 40) {
+                        vibe(isStar ? 'light' : 'heavy');
+                        if(isStar) catchScore++; else catchScore = Math.max(0, catchScore-2);
+                        document.getElementById('catch-score').innerText = catchScore;
+                        clearInterval(fallInt); item.remove();
+                        if(catchScore >= 20) { clearInterval(catchInt); checkMinigameWin(1, 1, 1); }
+                    } else if(y > area.clientHeight) {
+                        clearInterval(fallInt); item.remove();
+                    }
+                }, 20);
+            }, 800);
+        }
+
+        function checkMinigameWin(score, target, moves) {
+            if(score >= target) {
+                m3Active = false; showCinematic("ОТЛИЧНО!", initLetterScratch, 2000);
+            } else if(moves <= 0) {
+                m3Active = false; showCinematic("ЕЩЕ РАЗ!", initMatch3, 2000); 
+            } else {
+                m3Active = true; 
+            }
+        }
+
+        // --- СКРЕТЧ ПИСЬМО ---
+        function initLetterScratch() {
+            showScreen('letter-screen');
+            document.getElementById('secret-word-text').innerText = secretWords[activeLevel];
+            document.getElementById('btn-letter-next').classList.remove('show');
+            
+            let cvs = document.getElementById('scratch-canvas');
+            cvs.width = 280; cvs.height = 120; cvs.style.opacity = 1;
+            let ctx = cvs.getContext('2d');
+            ctx.fillStyle = '#C0C0C0'; ctx.fillRect(0,0,280,120);
+            ctx.font = 'bold 16px Montserrat'; ctx.fillStyle='#555'; ctx.textAlign='center'; ctx.fillText('Сотри меня пальцем!', 140, 65);
+            
+            let scratched = 0;
+            let scratchHandler = (e) => {
+                e.preventDefault(); 
+                let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                if(!clientX || !clientY) return;
+                
+                let rect = cvs.getBoundingClientRect();
+                let x = clientX - rect.left, y = clientY - rect.top;
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.beginPath(); ctx.arc(x,y,20,0,Math.PI*2); ctx.fill();
+                scratched++; 
+                if(scratched % 5 === 0) vibe('light');
+                if(scratched > 60) { 
+                    cvs.style.opacity = 0; 
+                    document.getElementById('btn-letter-next').classList.add('show'); 
+                }
+            };
+            cvs.addEventListener('touchmove', scratchHandler, {passive: false});
+            cvs.addEventListener('mousemove', e => { if(e.buttons === 1) scratchHandler(e); });
+        }
+
+        function finishLevelSequence() {
+            if(!unlockedWords.includes(secretWords[activeLevel])) unlockedWords.push(secretWords[activeLevel]);
+            
+            if(activeLevel === currentLevel) {
+                currentLevel++; 
+                try { 
+                    window.localStorage.setItem('zhanna_level_v19', currentLevel); 
+                    window.localStorage.setItem('zhanna_words_v19', JSON.stringify(unlockedWords));
+                } catch(e) {}
+            }
+            
+            if(activeLevel >= maxLevel) {
+                showCinematic("ТЫ ПРОШЛА ВСЮ ИГРУ!", function() { 
+                    try { window.Telegram.WebApp.sendData("game_mega_win_all_levels"); window.Telegram.WebApp.close(); } catch(e) { alert("Победа! Возвращайся к Сереже!"); }
+                }, 4000);
+            } else {
+                showLevels();
+            }
+        }
+
+        function showCinematic(text, callback, duration) {
+            const overlay = document.getElementById('cinematic-overlay');
+            document.getElementById('cinematic-text').innerText = text;
+            showOverlay('cinematic-overlay');
+            if(duration !== 999999) {
+                setTimeout(function() { hideOverlay('cinematic-overlay'); if(callback) callback(); }, duration);
+            }
+        }
+    </script>
+</body>
+</html>
